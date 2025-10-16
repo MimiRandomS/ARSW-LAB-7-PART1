@@ -1,64 +1,232 @@
-#### Escuela Colombiana de Ingeniería
-#### Procesos de desarrollo de software - PDSW
-#### Construción de un cliente 'grueso' con un API REST, HTML5, Javascript y CSS3. Parte II.
+# 🏗️ Escuela Colombiana de Ingeniería
 
+## ARSW
 
+### Construcción de un cliente 'grueso' con un API REST, HTML5, Javascript y CSS3 (Parte II)
 
-![](img/mock2.png)
+**Autores:**
 
-1. Agregue al canvas de la página un manejador de eventos que permita capturar los 'clicks' realizados, bien sea a través del mouse, o a través de una pantalla táctil. Para esto, tenga en cuenta [este ejemplo de uso de los eventos de tipo 'PointerEvent'](https://mobiforge.com/design-development/html5-pointer-events-api-combining-touch-mouse-and-pen) (aún no soportado por todos los navegadores) para este fin. Recuerde que a diferencia del ejemplo anterior (donde el código JS está incrustado en la vista), se espera tener la inicialización de los manejadores de eventos correctamente modularizado, tal [como se muestra en este codepen](https://codepen.io/hcadavid/pen/BwWbrw).
+* 👨‍💻 *Geronimo Martínez Nuñez*
+* 👨‍💻 *Sergio Andrey Silva Rodríguez*
 
-2. Agregue lo que haga falta en sus módulos para que cuando se capturen nuevos puntos en el canvas abierto (si no se ha seleccionado un canvas NO se debe hacer nada):
-	1. Se agregue el punto al final de la secuencia de puntos del canvas actual (sólo en la memoria de la aplicación, AÚN NO EN EL API!).
-	2. Se repinte el dibujo.
+---
 
-3. Agregue el botón Save/Update. Respetando la arquitectura de módulos actual del cliente, haga que al oprimirse el botón:
-	1. Se haga PUT al API, con el plano actualizado, en su recurso REST correspondiente.
-	2. Se haga GET al recurso /blueprints, para obtener de nuevo todos los planos realizados.
-	3. Se calculen nuevamente los puntos totales del usuario.
+## 🧩 Descripción general
 
-	Para lo anterior tenga en cuenta:
+Este proyecto implementa un cliente web modular para la **gestión de blueprints (planos)**, consumiendo un API REST desarrollado en Java con Spring Boot.
+El cliente permite **consultar, crear, actualizar, dibujar y eliminar** planos de un autor, utilizando un canvas HTML5 y un backend que persiste la información en memoria.
 
-	* jQuery no tiene funciones para peticiones PUT o DELETE, por lo que es necesario 'configurarlas' manualmente a través de su API para AJAX. Por ejemplo, para hacer una peticion PUT a un recurso /myrecurso:
+---
 
-	```javascript
-    return $.ajax({
-        url: "/mirecurso",
-        type: 'PUT',
-        data: '{"prop1":1000,"prop2":"papas"}',
-        contentType: "application/json"
-    });
-    
-	```
-	Para éste note que la propiedad 'data' del objeto enviado a $.ajax debe ser un objeto jSON (en formato de texto). Si el dato que quiere enviar es un objeto JavaScript, puede convertirlo a jSON con: 
-	
-	```javascript
-	JSON.stringify(objetojavascript),
-	```
-	* Como en este caso se tienen tres operaciones basadas en _callbacks_, y que las mismas requieren realizarse en un orden específico, tenga en cuenta cómo usar las promesas de JavaScript [mediante alguno de los ejemplos disponibles](http://codepen.io/hcadavid/pen/jrwdgK).
+## 🚀 Requisitos implementados
 
-4. Agregue el botón 'Create new blueprint', de manera que cuando se oprima: 
-	* Se borre el canvas actual.
-	* Se solicite el nombre del nuevo 'blueprint' (usted decide la manera de hacerlo).
-	
-	Esta opción debe cambiar la manera como funciona la opción 'save/update', pues en este caso, al oprimirse la primera vez debe (igualmente, usando promesas):
+### **1. Captura de clicks en el Canvas (PointerEvent)**
 
-	1. Hacer POST al recurso /blueprints, para crear el nuevo plano.
-	2. Hacer GET a este mismo recurso, para actualizar el listado de planos y el puntaje del usuario.
+Se agregó un **manejador de eventos `pointerdown`** al canvas (`#blueprintCanvas`) en el módulo `app.js`, dentro de la función `setupCanvas()`:
 
-5. Agregue el botón 'DELETE', de manera que (también con promesas):
-	* Borre el canvas.
-	* Haga DELETE del recurso correspondiente.
-	* Haga GET de los planos ahora disponibles.
+```javascript
+canvas.addEventListener("pointerdown", (e) => {
+  if (!currentBlueprint.name) return; // No hay plano abierto
 
-### Criterios de evaluación
+  const rect = canvas.getBoundingClientRect();
+  const x = e.clientX - rect.left;
+  const y = e.clientY - rect.top;
 
-1. Funcional
-	* La aplicación carga y dibuja correctamente los planos.
-	* La aplicación actualiza la lista de planos cuando se crea y almacena (a través del API) uno nuevo.
-	* La aplicación permite modificar planos existentes.
-	* La aplicación calcula correctamente los puntos totales.
-2. Diseño
-	* Los callback usados al momento de cargar los planos y calcular los puntos de un autor NO hace uso de ciclos, sino de operaciones map/reduce.
-	* Las operaciones de actualización y borrado hacen uso de promesas para garantizar que el cálculo del puntaje se realice sólo hasta cando se hayan actualizados los datos en el backend. Si se usan callbacks anidados se evalúa como R.
-	
+  currentBlueprint.points.push({ x, y });
+  redrawCurrentBlueprint(ctx);
+});
+```
+
+📌 **Explicación:**
+
+* Usa `PointerEvent`, compatible con mouse y pantallas táctiles.
+* Solo permite dibujar si hay un plano abierto.
+* Captura la posición del click en coordenadas relativas al canvas.
+
+---
+
+### **2. Dibujo dinámico de puntos y repintado**
+
+Cada punto capturado se **agrega a la lista del blueprint actual** (`currentBlueprint.points`), y luego se redibuja el plano con:
+
+```javascript
+function redrawCurrentBlueprint(ctx) {
+  ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
+  if (currentBlueprint.points.length > 0) {
+    ctx.beginPath();
+    ctx.moveTo(currentBlueprint.points[0].x, currentBlueprint.points[0].y);
+    currentBlueprint.points.slice(1).forEach((p) => ctx.lineTo(p.x, p.y));
+    ctx.stroke();
+  }
+}
+```
+
+📌 **Resultado:**
+Cada click agrega un punto y repinta en tiempo real la figura sin necesidad de recargar el canvas completo.
+
+---
+
+### **3. Botón “Save / Update”**
+
+El botón guarda los cambios realizados sobre el plano actual.
+
+* Si el plano ya existe: hace un **PUT** al recurso `/api/blueprints/{author}/{bpname}`.
+* Si no existe: hace un **POST** para crearlo.
+* Luego actualiza la lista de planos y recalcula el total de puntos.
+
+```javascript
+function saveBlueprint() {
+  const author = getSelectedAuthor();
+  const bpname = currentBlueprint.name;
+  if (!author || !bpname) {
+    alert("Seleccione un autor y un plano primero.");
+    return;
+  }
+
+  const blueprintData = { author, name: bpname, points: currentBlueprint.points };
+
+  ActiveAPI.getBlueprintsByNameAndAuthor(author, bpname, (points) => {
+    const exists = points.length > 0;
+    const request = exists
+      ? ActiveAPI.updateBlueprint(author, bpname, blueprintData)
+      : ActiveAPI.createBlueprint(blueprintData);
+
+    request
+      .then(() => ActiveAPI.getBlueprintsByAuthorPromise(author))
+      .then((plans) => updateBlueprintsTable(plans))
+      .catch((err) => console.error("Error guardando:", err));
+  });
+}
+```
+
+📌 **Uso correcto de promesas:**
+Las operaciones se ejecutan en cadena (`.then()`) garantizando que el listado se actualice **solo cuando el backend haya guardado** los cambios.
+
+---
+
+### **4. Botón “Create new blueprint”**
+
+Este botón permite crear un nuevo plano vacío:
+
+```javascript
+function createNewBlueprint() {
+  const author = getSelectedAuthor();
+  if (!author) {
+    alert("Seleccione un autor primero.");
+    return;
+  }
+
+  const name = prompt("Ingrese el nombre del nuevo plano:");
+  if (!name) return;
+
+  currentBlueprint = { name, points: [] };
+  const ctx = document.getElementById("blueprintCanvas").getContext("2d");
+  ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
+
+  alert(`Plano "${name}" creado. Dibuja y luego presiona Save/Update para guardar.`);
+}
+```
+
+📌 **Comportamiento:**
+
+* Limpia el canvas.
+* Crea un objeto `Blueprint` vacío.
+* Permite dibujar y luego guardar con el botón **Save/Update**, que internamente hará un **POST** la primera vez.
+
+---
+
+### **5. Botón “DELETE”**
+
+Se implementó la funcionalidad completa en el backend y frontend:
+
+#### 🖥️ **Backend**
+
+Se añadió soporte DELETE en todas las capas:
+
+* `BlueprintAPIController.deleteBlueprint(...)`
+* `BlueprintsServices.deleteBlueprint(...)`
+* `BlueprintsPersistence.deleteBlueprint(...)`
+* `InMemoryBlueprintPersistence.deleteBlueprint(...)`
+
+```java
+@DeleteMapping("/blueprints/{author}/{bpname}")
+public ResponseEntity<?> deleteBlueprint(@PathVariable String author,
+                                         @PathVariable String bpname) {
+    try {
+        services.deleteBlueprint(author, bpname);
+        return new ResponseEntity<>(HttpStatus.NO_CONTENT);
+    } catch (BlueprintNotFoundException ex) {
+        return new ResponseEntity<>("Blueprint not found", HttpStatus.NOT_FOUND);
+    }
+}
+```
+
+#### 🌐 **Frontend**
+
+En `app.js` se añadió:
+
+```javascript
+function deleteBlueprint() {
+  const author = getSelectedAuthor();
+  const bpname = currentBlueprint.name;
+  if (!author || !bpname) {
+    alert("Seleccione un plano primero.");
+    return;
+  }
+
+  if (!confirm(`¿Seguro que desea eliminar el plano "${bpname}"?`)) return;
+
+  ActiveAPI.deleteBlueprint(author, bpname)
+    .then(() => ActiveAPI.getBlueprintsByAuthorPromise(author))
+    .then((plans) => {
+      updateBlueprintsTable(plans);
+      const ctx = document.getElementById("blueprintCanvas").getContext("2d");
+      ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
+      currentBlueprint = { name: "", points: [] };
+      $("#selectedBlueprintName").text("");
+    })
+    .catch((err) => console.error("Error eliminando:", err));
+}
+```
+
+📌 **Cumple:**
+
+* Elimina el plano del backend.
+* Limpia el canvas.
+* Refresca la tabla de planos y recalcula puntos.
+* Usa **promesas** para asegurar el orden correcto.
+
+---
+
+## 🧮 Criterios de evaluación
+
+### ✅ **1. Funcional**
+
+* [x] La aplicación carga y dibuja correctamente los planos.
+* [x] Permite crear, modificar y eliminar planos.
+* [x] Se actualiza el listado y el total de puntos dinámicamente.
+* [x] Canvas funcional con eventos de tipo `PointerEvent`.
+
+### 🎨 **2. Diseño**
+
+* [x] Los cálculos de puntos totales usan **map/reduce**, sin ciclos explícitos.
+* [x] Las operaciones de actualización, creación y borrado usan **promesas** (sin callbacks anidados).
+* [x] Código modular y dividido correctamente entre `APIClient`, `app.js` y `apimock.js`.
+
+---
+
+## 🧠 Conclusión
+
+El proyecto cumple con todos los requerimientos funcionales y de diseño establecidos en la guía.
+El cliente web es capaz de interactuar completamente con el backend RESTful, manejando operaciones **CRUD** de forma reactiva, usando **promesas, eventos Pointer y repintado dinámico en canvas**.
+
+---
+
+**Autores:**
+👨‍💻 *Geronimo Martínez Nuñez*
+👨‍💻 *Sergio Andrey Silva Rodríguez*
+
+**Escuela Colombiana de Ingeniería Julio Garavito**
+**Procesos de Desarrollo de Software – 2025**
+
+---
